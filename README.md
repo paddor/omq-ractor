@@ -1,5 +1,10 @@
 # OMQ::Ractor -- Networked Ractors
 
+[![CI](https://github.com/paddor/omq-ractor/actions/workflows/ci.yml/badge.svg)](https://github.com/paddor/omq-ractor/actions/workflows/ci.yml)
+[![Gem Version](https://img.shields.io/gem/v/omq-ractor?color=e9573f)](https://rubygems.org/gems/omq-ractor)
+[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](LICENSE)
+[![Ruby](https://img.shields.io/badge/Ruby-%3E%3D%204.0-CC342D?logo=ruby&logoColor=white)](https://www.ruby-lang.org)
+
 Ruby Ractors give you true parallelism -- each Ractor gets its own GVL,
 so CPU-bound work runs on separate cores. But they can only talk to each
 other inside a single process, using `Ractor::Port`. No networking, no
