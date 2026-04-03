@@ -127,6 +127,46 @@ describe "OMQ::Ractor" do
   end
 
 
+  it "SocketSet#socket_for maps port back to proxy" do
+    Async do
+      pull_a = OMQ::PULL.bind("inproc://r-sockfor-a")
+      pull_b = OMQ::PULL.bind("inproc://r-sockfor-b")
+      push   = OMQ::PUSH.bind("inproc://r-sockfor-out")
+
+      worker = OMQ::Ractor.new(pull_a, pull_b, push, serialize: false) do |omq|
+        sockets = omq.sockets
+        a, b, out = sockets
+        4.times do
+          port, msg = Ractor.select(a.to_port, b.to_port)
+          source = sockets.socket_for(port)
+          label  = source.equal?(a) ? "A" : "B"
+          out << ["#{label}:#{msg.first}"]
+        end
+      end
+
+      sender_a = OMQ::PUSH.connect("inproc://r-sockfor-a")
+      sender_b = OMQ::PUSH.connect("inproc://r-sockfor-b")
+      receiver = OMQ::PULL.connect("inproc://r-sockfor-out")
+      wait_connected(sender_a, sender_b, receiver)
+
+      sender_a << "one"
+      sender_b << "two"
+      sender_a << "three"
+      sender_b << "four"
+
+      results = 4.times.map { receiver.receive.first }
+      worker.join
+
+      assert_includes results, "A:one"
+      assert_includes results, "B:two"
+      assert_includes results, "A:three"
+      assert_includes results, "B:four"
+    ensure
+      [sender_a, sender_b, receiver, pull_a, pull_b, push].compact.each(&:close)
+    end
+  end
+
+
   # ── Serialization (inproc, make_shareable) ─────────────────
 
   it "inproc serialization sends Ruby objects via make_shareable" do

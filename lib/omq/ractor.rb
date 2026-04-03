@@ -230,6 +230,33 @@ module OMQ
     end
 
 
+    # Array of SocketProxy objects with a port→proxy lookup for
+    # Ractor.select results.
+    #
+    class SocketSet < Array
+      def initialize(proxies)
+        super(proxies)
+        @by_port = {}
+        proxies.each do |proxy|
+          @by_port[proxy.to_port] = proxy if proxy.to_port rescue nil
+        end
+      end
+
+      # Returns the SocketProxy whose input port matches +port+.
+      # Use after Ractor.select to map back to the proxy:
+      #
+      #   port, msg = Ractor.select(a.to_port, b.to_port)
+      #   source = sockets.socket_for(port)
+      #
+      # @param port [Ractor::Port]
+      # @return [SocketProxy, nil]
+      #
+      def socket_for(port)
+        @by_port[port]
+      end
+    end
+
+
     # -- Context -------------------------------------------------------
 
     # Frozen, shareable context passed to the worker Ractor.
@@ -252,9 +279,10 @@ module OMQ
 
         @setup_port.send(input_ports)
 
-        @socket_configs.each_with_index.map do |cfg, i|
+        proxies = @socket_configs.each_with_index.map do |cfg, i|
           SocketProxy.new(input_ports[i], @output_ports[i], cfg[:topic_type])
         end
+        SocketSet.new(proxies)
       end
     end
 

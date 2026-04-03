@@ -50,8 +50,7 @@ Async do
   worker = OMQ::Ractor.new(pull, push) do |omq|
     pull_p, push_p = omq.sockets  # handshake (must be first call)
 
-    loop do
-      msg = pull_p.receive
+    while msg = pull_p.receive    # nil on close
       push_p << expensive_transform(msg)
     end
   end
@@ -66,16 +65,28 @@ lightweight wrappers around `Ractor::Port` pairs.
 
 ### Multiplexing with Ractor.select
 
+`Ractor.select` waits on multiple `Ractor::Port` objects and returns
+`[port, value]`. Use `#to_port` to get the underlying port, and
+`#socket_for` to map back to the proxy:
+
 ```ruby
 worker = OMQ::Ractor.new(pull_a, pull_b, push) do |omq|
-  a, b, out = omq.sockets
+  sockets = omq.sockets
+  a, b, out = sockets
 
   loop do
-    source, msg = Ractor.select(a.to_port, b.to_port)
-    out << process(msg)
+    port, msg = Ractor.select(a.to_port, b.to_port)
+    break if msg.nil?  # socket closed
+    source = sockets.socket_for(port)  # => a or b
+    out << process(source, msg)
   end
 end
 ```
+
+Note: `Ractor.select` returns raw port values, bypassing `SocketProxy#receive`.
+For topic-based sockets, `msg` will be the full `[topic, payload]` array --
+use `#receive` or `#receive_with_topic` on a single proxy instead if you
+need topic stripping.
 
 ### Bidirectional (PAIR, REQ/REP, DEALER)
 
@@ -83,8 +94,7 @@ end
 worker = OMQ::Ractor.new(pair) do |omq|
   p = omq.sockets.first
 
-  loop do
-    msg = p.receive
+  while msg = p.receive
     p << transform(msg)
   end
 end
@@ -127,8 +137,7 @@ Async do
 
     OMQ::Ractor.new(pull, push) do |omq|
       p_in, p_out = omq.sockets
-      loop do
-        msg = p_in.receive
+      while msg = p_in.receive
         p_out << expensive_transform(msg)
       end
     end
@@ -165,8 +174,9 @@ Use `serialize: false` for raw messages (frozen string arrays):
 ```ruby
 worker = OMQ::Ractor.new(pull, push, serialize: false) do |omq|
   p_in, p_out = omq.sockets
-  msg = p_in.receive          # frozen string array, e.g. ["hello"]
-  p_out << [msg.first.upcase] # must send frozen string arrays
+  while msg = p_in.receive          # frozen string array, e.g. ["hello"]
+    p_out << [msg.first.upcase]     # must send frozen string arrays
+  end
 end
 ```
 
