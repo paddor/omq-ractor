@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.3
+
+### Added
+
+- **`data:` keyword for `OMQ::Ractor.new`** — pass an arbitrary
+  Ractor-shareable object into the worker block, accessible as `omq.data`.
+  This is the supported way to pass configuration under Ruby 4.0's strict
+  Ractor isolation, which forbids closing over outer variables.
+
 ## 0.1.2
 
 ### Added

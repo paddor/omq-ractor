@@ -387,6 +387,54 @@ describe "OMQ::Ractor" do
   end
 
 
+  # ── Context#data ───────────────────────────────────────────
+
+  it "passes shareable data into the worker via data:" do
+    Async do
+      pull = OMQ::PULL.bind("inproc://r-data")
+
+      config = { multiplier: 10, prefix: "out" }
+      worker = OMQ::Ractor.new(pull, serialize: false, data: config) do |omq|
+        sockets = omq.sockets
+        p = sockets.first
+        d = omq.data
+        3.times.map { "#{d[:prefix]}-#{p.receive.first.to_i * d[:multiplier]}" }
+      end
+
+      push = OMQ::PUSH.connect("inproc://r-data")
+      wait_connected(push)
+
+      3.times { |i| push << i.to_s }
+
+      result = worker.value
+      assert_equal %w[out-0 out-10 out-20], result
+    ensure
+      [push, pull].compact.each(&:close)
+    end
+  end
+
+
+  it "data defaults to nil when not provided" do
+    Async do
+      pull = OMQ::PULL.bind("inproc://r-data-nil")
+
+      worker = OMQ::Ractor.new(pull, serialize: false) do |omq|
+        omq.sockets
+        omq.data
+      end
+
+      push = OMQ::PUSH.connect("inproc://r-data-nil")
+      wait_connected(push)
+
+      worker.close
+      result = worker.value
+      assert_nil result
+    ensure
+      [push, pull].compact.each(&:close)
+    end
+  end
+
+
   # ── Error handling ─────────────────────────────────────────
 
   it "handshake timeout when worker doesn't call omq.sockets" do

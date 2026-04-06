@@ -262,13 +262,26 @@ module OMQ
     # Frozen, shareable context passed to the worker Ractor.
     # The user calls #sockets to trigger the setup handshake.
     #
+    # An optional +data+ object (any Ractor.make_shareable-able value)
+    # can be passed via OMQ::Ractor.new(data: …) and retrieved inside
+    # the worker block with +omq.data+. This is the only way to pass
+    # extra information into a worker block under Ruby 4.0's strict
+    # Ractor isolation, which forbids capturing any outer local variable.
+    #
     class Context
-      def initialize(setup_port, output_ports, socket_configs)
+      def initialize(setup_port, output_ports, socket_configs, data: nil)
         @setup_port     = setup_port
         @output_ports   = output_ports
         @socket_configs = socket_configs
+        @data           = data
         ::Ractor.make_shareable(self)
       end
+
+      # User-supplied shareable data (passed as +data:+ to OMQ::Ractor.new).
+      #
+      # @return [Object, nil]
+      #
+      attr_reader :data
 
       # Performs the setup handshake and returns SocketProxy objects.
       #
@@ -293,10 +306,14 @@ module OMQ
     #
     # @param sockets [Array<Socket>] sockets to bridge
     # @param serialize [Boolean] whether to auto-serialize per connection (default: true)
+    # @param data [Object, nil] optional shareable data accessible as +omq.data+
+    #   inside the worker block. Under Ruby 4.0's strict Ractor isolation,
+    #   worker blocks cannot close over outer local variables; use +data:+ to
+    #   pass configuration into the block.
     # @yield [Context] block executes inside the worker Ractor;
     #   must call omq.sockets immediately
     #
-    def initialize(*sockets, serialize: true, &block)
+    def initialize(*sockets, serialize: true, data: nil, &block)
       raise ArgumentError, "no sockets given"  if sockets.empty?
       raise ArgumentError, "no block given"    unless block
 
@@ -321,7 +338,8 @@ module OMQ
       # Build frozen context for the worker
       frozen_configs = ::Ractor.make_shareable(socket_configs)
       frozen_outputs = ::Ractor.make_shareable(output_ports)
-      ctx = Context.new(setup_port, frozen_outputs, frozen_configs)
+      frozen_data    = data ? ::Ractor.make_shareable(data) : nil
+      ctx = Context.new(setup_port, frozen_outputs, frozen_configs, data: frozen_data)
 
       # Install connection wrappers for per-connection serialization
       install_connection_wrappers(socket_configs) if serialize
