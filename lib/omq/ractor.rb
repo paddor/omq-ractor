@@ -33,6 +33,7 @@ module OMQ
 
     HANDSHAKE_TIMEOUT = 0.1
 
+
     # Socket types that use topic/group-based routing.
     # These get topic-aware connection wrappers that preserve
     # the first frame (topic/group) as a plain string for matching.
@@ -45,6 +46,8 @@ module OMQ
     # the wrapped class (e.g. DirectPipe) still work.
     #
     module TransparentDelegator
+      # @param klass [Class] class to check against
+      # @return [Boolean] true if self or the wrapped object is_a? klass
       def is_a?(klass)
         super || __getobj__.is_a?(klass)
       end
@@ -56,11 +59,18 @@ module OMQ
     # The send pump is single-threaded, so identity check suffices.
     #
     class SerializeCache
+      # @return [SerializeCache]
       def initialize
         @last  = nil
         @bytes = nil
       end
 
+
+      # Returns the Marshal-dumped bytes for +obj+, reusing the cached result
+      # if +obj+ is the same object as the last call.
+      #
+      # @param obj [Object] object to serialize
+      # @return [String] frozen Marshal bytes
       def marshal(obj)
         return @bytes if obj.equal?(@last)
         @last  = obj
@@ -75,19 +85,29 @@ module OMQ
     class MarshalConnection < SimpleDelegator
       include TransparentDelegator
 
+      # @param conn [Object] underlying connection to wrap
+      # @param cache [SerializeCache] shared serialization cache
       def initialize(conn, cache)
         super(conn)
         @cache = cache
       end
 
+
+      # @param parts [Array<String>] message frames to serialize and send
+      # @return [void]
       def send_message(parts)
         super([@cache.marshal(parts)])
       end
 
+
+      # @param parts [Array<String>] message frames to serialize and write
+      # @return [void]
       def write_message(parts)
         super([@cache.marshal(parts)])
       end
 
+
+      # @return [Object] deserialized message
       def receive_message
         Marshal.load(super.first)
       end
@@ -99,6 +119,8 @@ module OMQ
     class ShareableConnection < SimpleDelegator
       include TransparentDelegator
 
+      # @param obj [Object] message to freeze and send via Ractor.make_shareable
+      # @return [void]
       def send_message(obj)
         super(::Ractor.make_shareable(obj))
       end
@@ -112,19 +134,29 @@ module OMQ
     class TopicMarshalConnection < SimpleDelegator
       include TransparentDelegator
 
+      # @param conn [Object] underlying connection to wrap
+      # @param cache [SerializeCache] shared serialization cache
       def initialize(conn, cache)
         super(conn)
         @cache = cache
       end
 
+
+      # @param parts [Array<String>] message frames; first frame is topic
+      # @return [void]
       def send_message(parts)
         super([parts[0], @cache.marshal(parts[1..])])
       end
 
+
+      # @param parts [Array<String>] message frames; first frame is topic
+      # @return [void]
       def write_message(parts)
         super([parts[0], @cache.marshal(parts[1..])])
       end
 
+
+      # @return [Array<String>] deserialized message with topic as first element
       def receive_message
         parts = super
         [parts[0], *Marshal.load(parts[1])]
@@ -137,6 +169,8 @@ module OMQ
     class TopicShareableConnection < SimpleDelegator
       include TransparentDelegator
 
+      # @param parts [Array<String>] message frames to freeze and send
+      # @return [void]
       def send_message(parts)
         super(::Ractor.make_shareable(parts))
       end
@@ -148,16 +182,23 @@ module OMQ
     # Raised by SocketProxy#receive after the socket has been closed.
     # The first receive after closure returns nil; subsequent calls raise.
     #
-    class SocketClosedError < IOError; end
+    class SocketClosedError < IOError
+    end
 
 
+    # Ractor-side proxy for an OMQ socket. Provides #receive, #<<, and #publish
+    # to communicate with the main-thread socket through Ractor ports.
     class SocketProxy
+      # @param input_port [Ractor::Port, nil] port for receiving messages (nil if write-only)
+      # @param output_port [Ractor::Port, nil] port for sending messages (nil if read-only)
+      # @param topic_type [Boolean] whether this is a topic-based socket (PUB/SUB, RADIO/DISH)
       def initialize(input_port, output_port, topic_type)
         @in         = input_port
         @out        = output_port
         @topic_type = topic_type
         @closed     = false
       end
+
 
       # Receives the next message from this socket.
       # Returns nil once when the socket closes, then raises
@@ -176,6 +217,7 @@ module OMQ
         @topic_type ? msg.last : msg
       end
 
+
       # Receives the next message with its topic (PUB/SUB, RADIO/DISH).
       #
       # @return [Array(String, Object), nil] [topic, payload], or nil on close
@@ -190,6 +232,7 @@ module OMQ
         end
         [msg.first, msg.last]
       end
+
 
       # Sends a message through this socket.
       # For topic-based sockets, wraps as ["", obj] (all subscribers).
@@ -207,6 +250,7 @@ module OMQ
         self
       end
 
+
       # Publishes a message with an explicit topic (PUB/SUB, RADIO/DISH).
       #
       # @param msg [Object] payload
@@ -218,6 +262,7 @@ module OMQ
         @out.send([topic.b.freeze, msg])
         self
       end
+
 
       # Returns the input port for use with Ractor.select.
       #
@@ -234,13 +279,19 @@ module OMQ
     # Ractor.select results.
     #
     class SocketSet < Array
+      # @param proxies [Array<SocketProxy>] socket proxies to include
       def initialize(proxies)
         super(proxies)
         @by_port = {}
         proxies.each do |proxy|
-          @by_port[proxy.to_port] = proxy if proxy.to_port rescue nil
+          begin
+            @by_port[proxy.to_port] = proxy if proxy.to_port
+          rescue ::Ractor::ClosedError
+            # Skip non-readable proxies.
+          end
         end
       end
+
 
       # Returns the SocketProxy whose input port matches +port+.
       # Use after Ractor.select to map back to the proxy:
@@ -269,6 +320,10 @@ module OMQ
     # Ractor isolation, which forbids capturing any outer local variable.
     #
     class Context
+      # @param setup_port [Ractor::Port] port for the setup handshake
+      # @param output_ports [Array<Ractor::Port, nil>] output ports for writable sockets
+      # @param socket_configs [Array<Hash>] per-socket configuration hashes
+      # @param data [Object, nil] optional shareable data for the worker
       def initialize(setup_port, output_ports, socket_configs, data: nil)
         @setup_port     = setup_port
         @output_ports   = output_ports
@@ -276,6 +331,7 @@ module OMQ
         @data           = data
         ::Ractor.make_shareable(self)
       end
+
 
       # User-supplied shareable data (passed as +data:+ to OMQ::Ractor.new).
       #
@@ -328,6 +384,7 @@ module OMQ
           serialize: serialize, topic_type: topic_type }
       end
 
+
       # Main Ractor creates output ports (one per writable socket)
       @output_ports = socket_configs.map { |cfg| cfg[:writable] ? ::Ractor::Port.new : nil }
       output_ports  = @output_ports
@@ -374,6 +431,7 @@ module OMQ
     # Waits for the worker Ractor to finish naturally.
     # The worker must return from its block on its own.
     #
+    # @return [void]
     def join
       await_ractor { @ractor.join }
     ensure
@@ -384,6 +442,7 @@ module OMQ
     # Returns the worker Ractor's return value.
     # The worker must return from its block on its own.
     #
+    # @return [Object] the worker block's return value
     def value
       await_ractor { @ractor.value }
     ensure
@@ -395,6 +454,7 @@ module OMQ
     # Sends nil through all input ports, causing proxy.receive
     # to return nil (first time) or raise SocketClosedError.
     #
+    # @return [void]
     def close
       @input_ports.each { |p| p&.send(nil) rescue nil }
       await_ractor { @ractor.join } rescue nil
@@ -525,6 +585,7 @@ module OMQ
           wr.close rescue nil
         end
 
+
         # Async task: wait on pipe, drain queue, enqueue to engine
         @input_tasks << @parent_task.async(transient: true, annotation: "ractor output bridge") do
           loop do
@@ -549,6 +610,7 @@ module OMQ
 
 
     SHUTDOWN = :__omq_ractor_shutdown__
+
 
     def cleanup_bridges
       @input_tasks.each { |t| t.stop rescue nil }

@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Replace `rescue nil` with `rescue ::Ractor::ClosedError`** in
+  `SocketSet#initialize` — bare `rescue nil` masked real errors. Uses
+  `::Ractor::ClosedError` (root-qualified) to avoid resolving to the
+  non-existent `OMQ::Ractor::ClosedError`.
+
+### Changed
+
+- YARD documentation on all public methods and classes.
+- Code style: two blank lines between methods and constants.
+
 ## 0.1.3
 
 ### Added
