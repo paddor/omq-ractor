@@ -2,7 +2,7 @@
 
 Gem::Specification.new do |s|
   s.name     = "omq-ractor"
-  s.version  = "0.1.3"
+  s.version  = "0.1.4"
   s.authors  = ["Patrik Wenger"]
   s.email    = ["paddor@gmail.com"]
   s.summary  = "Bridge OMQ sockets into Ruby Ractors for true parallel processing"

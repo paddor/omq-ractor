@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4 — 2026-04-07
+
+### Fixed
+
+- **Increase Ractor handshake timeout from 100ms to 5s** — multiple Ractors
+  starting simultaneously can take longer to boot and call `omq.sockets`,
+  causing spurious `ArgumentError` on `-P` parallel pipe workers.
+
 ## 0.1.3 — 2026-04-07
 
 ### Fixed
