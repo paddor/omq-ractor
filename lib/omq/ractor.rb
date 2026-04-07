@@ -31,7 +31,7 @@ module OMQ
   #
   class Ractor
 
-    HANDSHAKE_TIMEOUT = 0.1
+    HANDSHAKE_TIMEOUT = 5
 
 
     # Socket types that use topic/group-based routing.
