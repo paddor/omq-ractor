@@ -107,6 +107,13 @@ module OMQ
       end
 
 
+      # @param batch [Array<Array<String>>] batch of message frames to serialize and write
+      # @return [void]
+      def write_messages(batch)
+        super(batch.map { |parts| [@cache.marshal(parts)] })
+      end
+
+
       # @return [Object] deserialized message
       def receive_message
         Marshal.load(super.first)
@@ -153,6 +160,13 @@ module OMQ
       # @return [void]
       def write_message(parts)
         super([parts[0], @cache.marshal(parts[1..])])
+      end
+
+
+      # @param batch [Array<Array<String>>] batch of message frames; first frame is topic
+      # @return [void]
+      def write_messages(batch)
+        super(batch.map { |parts| [parts[0], @cache.marshal(parts[1..])] })
       end
 
 
