@@ -525,7 +525,7 @@ module OMQ
       @sockets.each_with_index do |socket, i|
         cache      = SerializeCache.new
         topic_type = socket_configs[i][:topic_type]
-        engine     = socket.instance_variable_get(:@engine)
+        engine     = socket.engine
 
         engine.connection_wrapper = ->(conn) do
           inproc = conn.is_a?(Transport::Inproc::DirectPipe)
@@ -581,7 +581,7 @@ module OMQ
 
         do_serialize = socket_configs[i][:serialize]
         topic_type   = socket_configs[i][:topic_type]
-        engine       = socket.instance_variable_get(:@engine)
+        engine       = socket.engine
         queue        = Thread::Queue.new
         rd, wr       = IO.pipe
         @output_pipes << rd << wr
