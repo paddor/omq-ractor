@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.1.6 — 2026-04-20
+
+### Fixed
+
+- **Rename `Transport::Inproc::DirectPipe` → `Transport::Inproc::Pipe`.**
+  Upstream omq renamed the class in 0.24; the `is_a?` check in
+  `install_connection_wrappers` silently fell through, leaving
+  inproc without its shareable/marshal wrapper.
+- **Requires omq >= 0.26.1** for the Pipe's non-String-parts
+  tolerance fix.
+
+### Changed
+
+- Output bridge simplified: drop the `do_serialize`/`topic_type`
+  branching — both paths now trust the message shape coming out of
+  the Ractor port.
+
+## 0.1.5 — 2026-04-13
+
+### Changed
+
+- Minor internal refactors.
+
 ## 0.1.4 — 2026-04-07
 
 ### Fixed

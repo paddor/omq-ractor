@@ -31,7 +31,7 @@ module OMQ
   #
   class Ractor
 
-    HANDSHAKE_TIMEOUT = 5
+    HANDSHAKE_TIMEOUT = 1
 
 
     # Socket types that use topic/group-based routing.
@@ -43,7 +43,7 @@ module OMQ
     # -- Connection wrappers -------------------------------------------
 
     # Mixed into all connection wrappers so is_a? checks against
-    # the wrapped class (e.g. DirectPipe) still work.
+    # the wrapped class (e.g. Pipe) still work.
     #
     module TransparentDelegator
       # @param klass [Class] class to check against
@@ -121,7 +121,7 @@ module OMQ
     end
 
 
-    # Wraps an inproc DirectPipe with Ractor.make_shareable.
+    # Wraps an inproc Pipe with Ractor.make_shareable.
     #
     class ShareableConnection < SimpleDelegator
       include TransparentDelegator
@@ -528,7 +528,7 @@ module OMQ
         engine     = socket.engine
 
         engine.connection_wrapper = ->(conn) do
-          inproc = conn.is_a?(Transport::Inproc::DirectPipe)
+          inproc = conn.is_a?(Transport::Inproc::Pipe)
           if topic_type
             inproc ? TopicShareableConnection.new(conn) : TopicMarshalConnection.new(conn, cache)
           else
@@ -579,11 +579,9 @@ module OMQ
         port = output_ports[i]
         next unless port
 
-        do_serialize = socket_configs[i][:serialize]
-        topic_type   = socket_configs[i][:topic_type]
-        engine       = socket.engine
-        queue        = Thread::Queue.new
-        rd, wr       = IO.pipe
+        engine = socket.engine
+        queue  = Thread::Queue.new
+        rd, wr = IO.pipe
         @output_pipes << rd << wr
 
         # Thread: port.receive -> queue + pipe signal
@@ -607,13 +605,8 @@ module OMQ
             rd.read_nonblock(4096) rescue nil
 
             while (msg = queue.pop(true) rescue nil)
-              if do_serialize
-                parts = topic_type && msg.is_a?(Array) ? msg : [msg]
-                engine.enqueue_send(parts)
-              else
-                parts = socket.__send__(:freeze_message, msg)
-                engine.enqueue_send(parts)
-              end
+              parts = msg.is_a?(Array) ? msg : [msg]
+              engine.enqueue_send(parts)
             end
           rescue IOError, Async::Stop
             break
